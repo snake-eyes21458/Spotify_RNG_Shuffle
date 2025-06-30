@@ -6,11 +6,13 @@ import gradio as gr
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 
-CLIENT_ID = os.environ["SPOTIFY_CLIENT_ID"]
+# Environment variables for Spotify credentials and redirect
+CLIENT_ID     = os.environ["SPOTIFY_CLIENT_ID"]
 CLIENT_SECRET = os.environ["SPOTIFY_CLIENT_SECRET"]
 REDIRECT_URI  = os.environ["REDIRECT_URI"]
 SCOPE = "user-read-playback-state user-modify-playback-state playlist-read-private"
 
+# Initialize Spotipy OAuth
 sp_oauth = SpotifyOAuth(
     client_id=CLIENT_ID,
     client_secret=CLIENT_SECRET,
@@ -83,6 +85,7 @@ def try_login(current_url):
         gr.update(visible=True),
     )
 
+
 def background_queue_tracks(uris, device_id):
     for i, uri in enumerate(uris):
         try:
@@ -91,6 +94,7 @@ def background_queue_tracks(uris, device_id):
         except Exception as e:
             print(f"[Queue Error] Track {i}: {e}")
             time.sleep(1)
+
 
 def now_playing():
     try:
@@ -111,32 +115,41 @@ def now_playing():
     except Exception as e:
         return f"❌ Error fetching current track: {e}"
 
-def delayed_now_playing(output):
-    time.sleep(10)
-    output.update(now_playing())
 
-def shuffle_and_play(playlist_name, device_name):
+def shuffle_and_play_stream(playlist_name, device_name):
     pid = user_playlists.get(playlist_name)
     device_id = device_map.get(device_name)
-
     if not pid or not device_id:
-        return "❌ Invalid playlist or device."
+        yield "❌ Invalid playlist or device."
+        return
 
+    # Fetch and shuffle playlist URIs
     tracks, res = [], sp.playlist_tracks(pid)
     tracks.extend(res["items"])
-    while res["next"]:
+    while res.get("next"):
         res = sp.next(res)
         tracks.extend(res["items"])
-
-    uris = [t["track"]["uri"] for t in tracks if t["track"]]
+    uris = [t["track"]["uri"] for t in tracks if t.get("track")]
     random.shuffle(uris)
 
+    # Start playback and queue the rest
     try:
         sp.start_playback(device_id=device_id, uris=uris[:100])
-        threading.Thread(target=background_queue_tracks, args=(uris[100:200], device_id)).start()
-        return "✅ Shuffling... Song info will display in ~10 seconds."
+        threading.Thread(
+            target=background_queue_tracks,
+            args=(uris[100:200], device_id),
+            daemon=True
+        ).start()
     except Exception as e:
-        return f"❌ Playback failed: {str(e)}"
+        yield f"❌ Playback failed: {e}"
+        return
+
+    # Immediate feedback
+    yield "✅ Shuffling… loading current track in ~10 seconds."
+    # Delay before showing now playing
+    time.sleep(10)
+    yield now_playing()
+
 
 with gr.Blocks() as demo:
     gr.Markdown("## 🎵 RNG Spotify Playlist Shuffler")
@@ -156,12 +169,11 @@ with gr.Blocks() as demo:
         js="() => { return [window.location.href]; }"
     )
 
-    def handle_shuffle(playlist_name, device_name):
-        result_text = shuffle_and_play(playlist_name, device_name)
-        threading.Thread(target=delayed_now_playing, args=(result,)).start()
-        return result_text
-
-    shuffle_btn.click(handle_shuffle, [playlist_dd, device_dd], [result])
+    shuffle_btn.click(
+        shuffle_and_play_stream,
+        inputs=[playlist_dd, device_dd],
+        outputs=[result],
+    )
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7860))
