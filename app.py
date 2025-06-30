@@ -96,6 +96,26 @@ def background_queue_tracks(uris, device_id):
             time.sleep(1)
 
 
+def now_playing():
+    try:
+        data = sp.current_playback()
+        if not data or not data.get("is_playing"):
+            return "⚠️ Nothing is currently playing."
+        track = data["item"]
+        name = track["name"]
+        artist = ", ".join([a["name"] for a in track["artists"]])
+        album = track["album"]["name"]
+        image = track["album"]["images"][0]["url"]
+        html = f"""
+        <img src='{image}' width='300'><br>
+        <b>{name}</b> by {artist}<br/>
+        <i>{album}</i>
+        """
+        return html
+    except Exception as e:
+        return f"❌ Error fetching current track: {e}"
+
+
 def shuffle_and_play_stream(playlist_name, device_name):
     pid = user_playlists.get(playlist_name)
     device_id = device_map.get(device_name)
@@ -124,8 +144,11 @@ def shuffle_and_play_stream(playlist_name, device_name):
         yield f"❌ Playback failed: {e}"
         return
 
-    # Notify once shuffled
-    yield "✅ Playlist shuffled!"
+    # Immediate feedback
+    yield "✅ Shuffling… loading current track in ~10 seconds."
+    # Delay before showing now playing
+    time.sleep(10)
+    yield now_playing()
 
 
 with gr.Blocks() as demo:
@@ -159,5 +182,4 @@ if __name__ == "__main__":
         server_port=port,
         share=False
     )
-
 
