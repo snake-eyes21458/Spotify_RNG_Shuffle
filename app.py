@@ -8,7 +8,7 @@ from spotipy.oauth2 import SpotifyOAuth
 
 CLIENT_ID = os.environ["SPOTIFY_CLIENT_ID"]
 CLIENT_SECRET = os.environ["SPOTIFY_CLIENT_SECRET"]
-REDIRECT_URI = "https://jisaacso219-rng-shuffle.hf.space/"
+REDIRECT_URI  = os.environ["REDIRECT_URI"]
 SCOPE = "user-read-playback-state user-modify-playback-state playlist-read-private"
 
 sp_oauth = SpotifyOAuth(
