@@ -164,4 +164,10 @@ with gr.Blocks() as demo:
     shuffle_btn.click(handle_shuffle, [playlist_dd, device_dd], [result])
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", ssr_mode=False)
+    port = int(os.environ.get("PORT", 7860))
+    demo.launch(
+        server_name="0.0.0.0",
+        port=port,
+        share=False
+    )
+
