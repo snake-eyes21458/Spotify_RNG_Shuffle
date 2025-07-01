@@ -12,7 +12,7 @@ CLIENT_SECRET = os.environ["SPOTIFY_CLIENT_SECRET"]
 REDIRECT_URI  = os.environ["REDIRECT_URI"]
 SCOPE = "user-read-playback-state user-modify-playback-state playlist-read-private"
 
-# Initialize Spotipy OAuth
+# Initialize Spotipy OAuth manager with auto-refresh
 sp_oauth = SpotifyOAuth(
     client_id=CLIENT_ID,
     client_secret=CLIENT_SECRET,
@@ -31,6 +31,7 @@ def get_auth_url():
 def try_login(current_url):
     global sp, user_playlists, device_map
 
+    # Prompt user to login if no code in URL
     if "?code=" not in current_url:
         return (
             "🔐 Please login to Spotify.",
@@ -39,32 +40,35 @@ def try_login(current_url):
             gr.update(visible=False),
         )
 
+    # Extract code from redirect URL
     code = current_url.split("?code=")[1].split("&")[0]
-    try:
-        token_info = sp_oauth.get_cached_token()
-        if not token_info:
-            token_info = sp_oauth.get_access_token(code)
-        access_token = token_info["access_token"]
-    except Exception as e:
-        print("🔁 Token refresh failed:", str(e))
-        return (
-            f"❌ Failed to log in: {e}",
-            gr.update(visible=False),
-            gr.update(visible=False),
-            gr.update(visible=False),
-        )
+    # Ensure token is cached (initial authorization)
+    token_info = sp_oauth.get_cached_token()
+    if not token_info:
+        try:
+            sp_oauth.get_access_token(code)
+        except Exception as e:
+            return (
+                f"❌ Failed to authenticate: {e}",
+                gr.update(visible=False),
+                gr.update(visible=False),
+                gr.update(visible=False),
+            )
+    # Create Spotify client with auth_manager for auto-refresh
+    sp = spotipy.Spotify(auth_manager=sp_oauth)
 
-    sp = spotipy.Spotify(auth=access_token)
-
+    # Fetch user playlists
     try:
         playlists = sp.current_user_playlists(limit=50)["items"]
     except Exception as e:
         return f"❌ Failed to get playlists: {e}", *[gr.update(visible=False)] * 3
 
+    # Populate playlists dropdown
     user_playlists.clear()
     for p in playlists:
         user_playlists[p["name"]] = p["id"]
 
+    # Fetch and populate devices dropdown
     devices = sp.devices()["devices"]
     device_map.clear()
     for d in devices:
@@ -132,7 +136,7 @@ def shuffle_and_play_stream(playlist_name, device_name):
     uris = [t["track"]["uri"] for t in tracks if t.get("track")]
     random.shuffle(uris)
 
-    # Start playback and queue the rest
+    # Start playback and queue additional tracks
     try:
         sp.start_playback(device_id=device_id, uris=uris[:100])
         threading.Thread(
@@ -144,12 +148,11 @@ def shuffle_and_play_stream(playlist_name, device_name):
         yield f"❌ Playback failed: {e}"
         return
 
-    # Immediate feedback
-    yield "✅ Shuffling… loading current track in ~10 seconds."
-    # Delay before showing now playing
+    # Notify once shuffle completes
+    yield "✅ Playlist shuffled!"
+    # Delay then show current playing song
     time.sleep(10)
     yield now_playing()
-
 
 with gr.Blocks() as demo:
     gr.Markdown("## 🎵 RNG Spotify Playlist Shuffler")
@@ -182,4 +185,5 @@ if __name__ == "__main__":
         server_port=port,
         share=False
     )
+
 
